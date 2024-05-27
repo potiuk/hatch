@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from contextlib import suppress
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Generic, cast
+from typing import TYPE_CHECKING, Any, Generic, cast, Generator
 
 from hatchling.metadata.utils import (
     format_dependency,
@@ -183,33 +184,36 @@ class ProjectMetadata(Generic[PluginManagerBound]):
 
             # Save the fields
             _ = self.dynamic
+            self._core = metadata
+            self.run_metadata_hooks()
+        return self._core
 
-            metadata_hooks = self.hatch.metadata.hooks
-            if metadata_hooks:
-                static_fields = set(self.core_raw_metadata)
-                if 'version' in self.hatch.config:
-                    self._version = self._get_version(metadata)
-                    self.core_raw_metadata['version'] = self.version
+    def run_metadata_hooks(self, build_version: str = None) -> None:
+        metadata = self._core
+        metadata_hooks = self.hatch.metadata.hooks
+        if metadata_hooks:
+            static_fields = set(self.core_raw_metadata)
+            if 'version' in self.hatch.config:
+                self._version = self._get_version(metadata)
+                self.core_raw_metadata['version'] = self.version
 
-                if metadata.dynamic:
-                    for metadata_hook in metadata_hooks.values():
+            if metadata.dynamic or metadata.original_dynamic:
+                if not metadata.original_dynamic:
+                    metadata._original_dynamic = deepcopy(metadata.dynamic)
+                for metadata_hook in metadata_hooks.values():
+                    with metadata_hook.set_build_version(build_version):
                         metadata_hook.update(self.core_raw_metadata)
                         metadata.add_known_classifiers(metadata_hook.get_known_classifiers())
-
-                    new_fields = set(self.core_raw_metadata) - static_fields
-                    for new_field in new_fields:
-                        if new_field in metadata.dynamic:
-                            metadata.dynamic.remove(new_field)
-                        else:
-                            message = (
-                                f'The field `{new_field}` was set dynamically and therefore must be '
-                                f'listed in `project.dynamic`'
-                            )
-                            raise ValueError(message)
-
-            self._core = metadata
-
-        return self._core
+                new_fields = set(self.core_raw_metadata) - static_fields
+                for new_field in new_fields:
+                    if new_field in metadata.dynamic:
+                        metadata.dynamic.remove(new_field)
+                    if new_field not in metadata.dynamic and new_field not in metadata.original_dynamic:
+                        message = (
+                            f'The field `{new_field}` was set dynamically and therefore must be '
+                            f'listed in `project.dynamic`'
+                        )
+                        raise ValueError(message)
 
     @property
     def hatch(self) -> HatchMetadata:
@@ -389,9 +393,14 @@ class CoreMetadata:
         self._optional_dependencies_complex: dict[str, dict[str, Requirement]] | None = None
         self._optional_dependencies: dict[str, list[str]] | None = None
         self._dynamic: list[str] | None = None
+        self._original_dynamic: list[str] | None = None
 
         # Indicates that the version has been successfully set dynamically
         self._version_set: bool = False
+
+    @property
+    def original_dynamic(self) -> list[str]:
+        return self._original_dynamic or []
 
     @property
     def raw_name(self) -> str:
@@ -1366,6 +1375,7 @@ class CoreMetadata:
             self._dynamic = sorted(dynamic)
 
         return self._dynamic
+
 
     def add_known_classifiers(self, classifiers: list[str]) -> None:
         self._extra_classifiers.update(classifiers)

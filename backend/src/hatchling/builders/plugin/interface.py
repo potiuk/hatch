@@ -135,6 +135,7 @@ class BuilderInterface(ABC, Generic[BuilderConfigBound, PluginManagerBound]):
 
         for version in versions:
             self.app.display_debug(f'Building `{self.PLUGIN_NAME}` version `{version}`')
+            self.metadata.run_metadata_hooks(build_version=version)
 
             build_data = self.get_default_build_data()
             self.set_build_data_defaults(build_data)
@@ -291,7 +292,6 @@ class BuilderInterface(ABC, Generic[BuilderConfigBound, PluginManagerBound]):
             from hatchling.metadata.core import ProjectMetadata
 
             self.__metadata = ProjectMetadata(self.root, self.plugin_manager, self.__raw_config)
-
         return self.__metadata
 
     @property

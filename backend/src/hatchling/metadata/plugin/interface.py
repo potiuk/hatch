@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 from abc import ABC, abstractmethod
+from typing import Generator
 
 
 class MetadataHookInterface(ABC):  # no cov
@@ -34,6 +36,7 @@ class MetadataHookInterface(ABC):  # no cov
     def __init__(self, root: str, config: dict) -> None:
         self.__root = root
         self.__config = config
+        self.__build_version: str | None = None
 
     @property
     def root(self) -> str:
@@ -53,6 +56,13 @@ class MetadataHookInterface(ABC):  # no cov
         """
         return self.__config
 
+    @property
+    def build_version(self) -> str | None:
+        """
+        Gets the version of build (standard/editable) that is being run.
+        """
+        return self.__build_version
+
     @abstractmethod
     def update(self, metadata: dict) -> None:
         """
@@ -64,3 +74,10 @@ class MetadataHookInterface(ABC):  # no cov
         This returns extra classifiers that should be considered valid in addition to the ones known to PyPI.
         """
         return []
+
+    @contextlib.contextmanager
+    def set_build_version(self, build_version: str) -> Generator[None, None, None]:
+        old_build_version = self.build_version
+        self.__build_version = build_version
+        yield
+        self.__build_version = old_build_version
